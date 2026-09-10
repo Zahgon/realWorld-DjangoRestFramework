@@ -1,35 +1,82 @@
-import django_filters 
+"""
+Query-string filtering for the article list.
 
-from articles.models import Article
+The five parameters (``tag``, ``author``, ``favorited``, ``limit``, ``offset``)
+are applied in that declared order, so ``limit`` slices before ``offset`` does.
+``limit`` and ``offset`` are numeric; a non-numeric value is a validation error
+and a negative one is a slicing error, exactly as before.
+"""
+
+from decimal import Decimal, InvalidOperation
+
+NUMBER_FIELDS = ('limit', 'offset')
+FIELDS = ('tag', 'author', 'favorited', 'limit', 'offset')
 
 
-class ArticleFilter(django_filters.FilterSet):
-    tag = django_filters.CharFilter(method='tag_filter')
-    author = django_filters.CharFilter(method='author_filter')
-    favorited = django_filters.CharFilter(
-        field_name='favorites', 
-        method='is_favorited_filter', 
-        label='Are they favorited')
-    limit = django_filters.NumberFilter(method='limit_filter')
-    offset = django_filters.NumberFilter(method='offset_filter')
-    
-    class Meta:
-        model = Article
-        fields = ['tag', 'author', 'favorited', 'limit', 'offset']
-     
-    def tag_filter(self, queryset, field_name, value):
-        return queryset.filter(tags__name__in=[value])
-    
-    def author_filter(self, queryset, field_name, value):
-        return queryset.filter(author__username__icontains=value)
-    # filter by articles that have been favorited by the user name passed   
-    def is_favorited_filter(self, queryset, field_name, value):
-        return queryset.filter(favorites__username__icontains=value)
-    
-    # Limit number of articles (default is 20):
-    def limit_filter(self, queryset, field_name, value):
-        return queryset[:value]
-    
-    # Offset/skip number of articles (default is 0):
-    def offset_filter(self, queryset, field_name, value):
-        return queryset[value:]
+class FilterValidationError(Exception):
+    """Raised when a numeric parameter is not a number."""
+
+    def __init__(self, detail):
+        self.detail = detail
+        super().__init__(detail)
+
+
+def _to_number(raw):
+    try:
+        return Decimal(raw)
+    except (InvalidOperation, ValueError):
+        return None
+
+
+class ArticleFilter:
+    """Mirrors the filter set the article list has always been wired to."""
+
+    def __init__(self, params):
+        self.params = params
+        self.limit = None
+        self.offset = None
+
+        errors = {}
+        for name in NUMBER_FIELDS:
+            raw = params.get(name)
+            if raw in (None, ''):
+                continue
+            value = _to_number(raw)
+            if value is None:
+                errors[name] = ['Enter a number.']
+                continue
+            setattr(self, name, value)
+        if errors:
+            raise FilterValidationError(errors)
+
+    def filter(self, articles):
+        articles = list(articles)
+
+        tag = self.params.get('tag')
+        if tag:
+            articles = [a for a in articles if any(t.name == tag for t in a.tags)]
+
+        author = self.params.get('author')
+        if author:
+            needle = author.lower()
+            articles = [a for a in articles if needle in a.author.username.lower()]
+
+        favorited = self.params.get('favorited')
+        if favorited:
+            needle = favorited.lower()
+            articles = [a for a in articles
+                        if any(needle in fan.username.lower() for fan in a.favorites)]
+
+        if self.limit is not None:
+            articles = articles[:_index(self.limit)]
+
+        if self.offset is not None:
+            articles = articles[_index(self.offset):]
+
+        return articles
+
+
+def _index(value):
+    if value < 0:
+        raise ValueError('Negative indexing is not supported.')
+    return int(value)

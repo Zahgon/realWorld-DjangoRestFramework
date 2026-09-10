@@ -1,87 +1,91 @@
-from rest_framework import generics , status
-from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
-from rest_framework.response import Response 
+"""Comment endpoints.
 
-from comments.models import Comment
-from comments.serializers import CommentSerializer
+Ported one-for-one from the original views.  Two oddities are preserved on
+purpose: creating a comment answers 200 rather than 201, and deleting one
+requires no authentication at all because the original delete view declared no
+permission classes.
+"""
+from fastapi import APIRouter, Depends, Request
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from config.auth import current_user, current_user_or_none
+from config.database import get_session
+from config.parsers import parse_body, raw_body
+from config.responses import api_response
+
 from articles.models import Article
 
+from .models import Comment
+from .serializers import CommentSerializer, comment_data
 
-class CommentView(generics.ListCreateAPIView):
-    queryset = Comment.objects.all()
-    serializer_class = CommentSerializer 
-    permission_classes=[IsAuthenticated,]
-    
-    def get_permissions(self):
-        if self.request.method == 'GET':
-            return [IsAuthenticatedOrReadOnly()]
-        return super().get_permissions()
+router = APIRouter()
 
-    
-    def post(self, request, slug, *args, **kwargs):
-        try:
-            
-            article = Article.objects.get(slug=slug)
-            comment_data = request.data.get('comment')
-            
-            serializer_context = self.get_serializer_context()
-            serializer_context['article'] = article
-            
-            serializer = self.get_serializer(data=comment_data, context=serializer_context)
-            serializer.is_valid(raise_exception=True)
-            self.perform_create(serializer)
-        
-            return Response({ "comment": serializer.data } ,status=status.HTTP_200_OK)
-            
-        except Exception:
-            return Response({"errors": {
-                "body": [
-                    "Bad Request"
-                ]
-            }}, status=status.HTTP_404_NOT_FOUND)
-            
-        
-    
-    def list(self, request, slug, *args, **kwargs):
-        try:
-        
-            article = Article.objects.get(slug=slug)
-            comments = Comment.objects.filter(article=article).order_by('-created')
-            
-            serializer = self.get_serializer(comments, many=True)
-            
-            response = {
-                'comments' : serializer.data, 
-            }
-            
-            return Response(response)
-            
-        except Exception:
-            return Response({"errors": {
-                "body": [
-                    "Bad Request"
-                ]
-            }}, status=status.HTTP_404_NOT_FOUND)
-            
-        
-        
-    
+BAD_REQUEST = {"errors": {"body": ["Bad Request"]}}
 
-class DeleteCommentView(generics.DestroyAPIView):
-    
-    def destroy(self, request, slug, id, *args, **kwargs):
-        try:
-            
-            Article.objects.get(slug=slug)
-            comment = Comment.objects.get(id=id)
-            self.perform_destroy(comment)
-            return Response(status=status.HTTP_204_NO_CONTENT)
-            
-        except Exception:
-            return Response({"errors": {
-                    "body": [
-                        "Bad Request"
-                    ]
-                }}, status=status.HTTP_404_NOT_FOUND)   
-            
+
+def _get_article(session, slug):
+    article = session.scalars(select(Article).where(Article.slug == slug)).first()
+    if article is None:
+        raise LookupError(slug)
+    return article
+
+
+@router.get("/articles/{slug}/comments")
+def comment_list(
+    slug: str,
+    session: Session = Depends(get_session),
+    viewer=Depends(current_user_or_none),
+):
+    try:
+        article = _get_article(session, slug)
+        comments = session.scalars(
+            select(Comment)
+            .where(Comment.article_id == article.id)
+            .order_by(Comment.created.desc(), Comment.id.desc())
+        ).all()
+        return api_response({"comments": [comment_data(c, viewer) for c in comments]})
+    except Exception:
+        return api_response(BAD_REQUEST, status_code=404)
+
+
+@router.post("/articles/{slug}/comments")
+def comment_create(
+    slug: str,
+    request: Request,
+    body: bytes = Depends(raw_body),
+    session: Session = Depends(get_session),
+    user=Depends(current_user),
+):
+    try:
+        article = _get_article(session, slug)
+        payload = parse_body(request, body)["comment"]
+        serializer = CommentSerializer(**payload)
+        comment = Comment(content=serializer.body, author=user, article=article)
+        session.add(comment)
+        session.commit()
+        session.refresh(comment)
+        return api_response({"comment": comment_data(comment, user)})
+    except Exception:
+        session.rollback()
+        return api_response(BAD_REQUEST, status_code=404)
+
+
+@router.delete("/articles/{slug}/comments/{id}")
+def comment_destroy(
+    slug: str,
+    id: int,
+    session: Session = Depends(get_session),
+    viewer=Depends(current_user_or_none),
+):
+    try:
+        article = _get_article(session, slug)
+        comment = session.scalars(
+            select(Comment).where(Comment.id == id, Comment.article_id == article.id)
+        ).one()
+        session.delete(comment)
+        session.commit()
+        return api_response(status_code=204)
+    except Exception:
+        session.rollback()
+        return api_response(BAD_REQUEST, status_code=404)

@@ -1,31 +1,27 @@
-from rest_framework import serializers
+"""
+Payload shape for comments.
 
-from comments.models import Comment
-from articles.serializers import AuthorSerializer
+Field order is contract: ``id, createdAt, updatedAt, body, author``.
+"""
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from articles.serializers import author_data, format_timestamp
+
+COMMENT_FIELDS = ['id', 'createdAt', 'updatedAt', 'body', 'author']
 
 
-class CommentSerializer(serializers.ModelSerializer):
-    author = serializers.SerializerMethodField()
-    createdAt = serializers.DateTimeField(source='created', format='%Y-%m-%dT%H:%M:%S.%fZ', required=False)
-    updatedAt = serializers.DateTimeField(source='updated', format='%Y-%m-%dT%H:%M:%S.%fZ', required=False)
-    body = serializers.CharField(source='content', required=True)
-    
-    
-    class Meta:
-        model = Comment 
-        fields = ['id', 'createdAt', 'updatedAt', 'body', 'author']
-        
-    
-    def get_author(self, obj):
-        request = self.context.get('request')
-        serializer = AuthorSerializer(obj.author, context={'request': request})
-        return serializer.data
-    
-    def create(self, validated_data):
-        comment = Comment(
-            **validated_data,
-            author=self.context['request'].user, 
-            article=self.context['article']
-        )
-        comment.save()
-        return comment
+class CommentSerializer(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+
+    body: str = Field(min_length=1)
+
+
+def comment_data(comment, request_user=None):
+    return {
+        'id': comment.id,
+        'createdAt': format_timestamp(comment.created),
+        'updatedAt': format_timestamp(comment.updated),
+        'body': comment.content,
+        'author': author_data(comment.author, request_user),
+    }

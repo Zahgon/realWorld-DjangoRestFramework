@@ -1,8 +1,8 @@
-from django.urls import path
+"""Route table for the comments app.
 
-from comments import views
+The original project exposed ``urlpatterns`` here; the router below plays the
+same role and is mounted under the ``api`` prefix by :mod:`config.urls`.
+"""
+from .views import router
 
-urlpatterns = [
-    path('articles/<str:slug>/comments', views.CommentView.as_view(), name='comment-article'),
-    path('articles/<str:slug>/comments/<int:id>', views.DeleteCommentView.as_view(), name='comment-delete'),
-]
+__all__ = ["router"]

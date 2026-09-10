@@ -1,12 +1,8 @@
-from django.urls import path, include 
-from rest_framework.routers import DefaultRouter
+"""Route table for the articles app.
 
-from articles import views 
+The original project exposed ``urlpatterns`` here; the router below plays the
+same role and is mounted under the ``api`` prefix by :mod:`config.urls`.
+"""
+from .views import router
 
-article_router = DefaultRouter(trailing_slash=False)
-article_router.register('articles', views.ArticleView, basename='articles')
-article_router.register('tags', views.TagView)
-
-urlpatterns = [
-    path('', include(article_router.urls))
-]
+__all__ = ["router"]

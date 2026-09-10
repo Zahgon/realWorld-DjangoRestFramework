@@ -1,66 +1,74 @@
+import re
+import unicodedata
+from datetime import datetime, timezone
+
 import markdown
-from django.db import models
-from django.conf import settings
-from taggit.managers import TaggableManager
-from django.contrib.auth import get_user_model 
-from django.contrib.auth.models import AnonymousUser
-from django.utils.text import slugify
-from django.urls import reverse
+from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, String, Table, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from config.database import Base
+
+article_favorites = Table(
+    'articles_article_favorites',
+    Base.metadata,
+    Column('id', BigInteger, primary_key=True, autoincrement=True),
+    Column('article_id', BigInteger, ForeignKey('articles_article.id', ondelete='CASCADE'), nullable=False),
+    Column('user_id', BigInteger, ForeignKey('accounts_user.id', ondelete='CASCADE'), nullable=False),
+)
+
+article_tags = Table(
+    'articles_article_tags',
+    Base.metadata,
+    Column('id', BigInteger, primary_key=True, autoincrement=True),
+    Column('article_id', BigInteger, ForeignKey('articles_article.id', ondelete='CASCADE'), nullable=False),
+    Column('tag_id', BigInteger, ForeignKey('articles_tag.id', ondelete='CASCADE'), nullable=False),
+)
 
 
-User = get_user_model()
-
-class ArticleQuerySet(models.QuerySet):
-    def with_favorites(self, user: AnonymousUser | User) -> models.QuerySet:
-
-        return self.annotate(
-            num_favorites=models.Count("favorites"),
-            # true if user is authenticated 
-            is_favorite=models.Exists(
-                get_user_model().objects.filter(
-                    pk=user.id, favorites=models.OuterRef("pk")
-                ),
-            )
-            if user.is_authenticated
-            else models.Value(False, output_field=models.BooleanField()),
-        )
+def slugify(value, allow_unicode=False):
+    """The slug rule the stored slugs were produced with."""
+    value = str(value)
+    if allow_unicode:
+        value = unicodedata.normalize('NFKC', value)
+    else:
+        value = unicodedata.normalize('NFKD', value).encode('ascii', 'ignore').decode('ascii')
+    value = re.sub(r'[^\w\s-]', '', value.lower())
+    return re.sub(r'[-\s]+', '-', value).strip('-_')
 
 
-ArticleManager = models.Manager.from_queryset(ArticleQuerySet)
+class Tag(Base):
+    __tablename__ = 'articles_tag'
 
-class Article(models.Model):
-    author =  models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    title = models.CharField(max_length=150, unique=True)
-    summary = models.TextField(blank=True)
-    content = models.TextField(blank=True)
-    
-    created = models.DateTimeField(auto_now_add=True)
-    updated = models.DateTimeField(auto_now_add=True)
-    
-    tags = TaggableManager(blank=True)
-    favorites = models.ManyToManyField(
-        settings.AUTH_USER_MODEL, blank=True, related_name="favorites"
-    )
-    slug = models.SlugField(unique=True, max_length=255)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True, default='')
+    slug: Mapped[str] = mapped_column(String(100), unique=True, default='')
 
-    
-    objects = ArticleManager()
-    
-    # @property
-    # def slug(self) -> str:
-    #     return slugify(self.title)
-    def save(self, *args, **kwargs):
+    def __str__(self):
+        return self.name
+
+
+class Article(Base):
+    __tablename__ = 'articles_article'
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    author_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('accounts_user.id', ondelete='CASCADE'))
+    title: Mapped[str] = mapped_column(String(150), unique=True, default='')
+    summary: Mapped[str] = mapped_column(Text, default='')
+    content: Mapped[str] = mapped_column(Text, default='')
+    created: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    # The project has always written this once, at creation, and never again.
+    updated: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    slug: Mapped[str] = mapped_column(String(255), unique=True, default='')
+
+    author = relationship('User')
+    tags = relationship('Tag', secondary=article_tags, lazy='selectin', order_by='Tag.id')
+    favorites = relationship('User', secondary=article_favorites, lazy='selectin')
+
+    def save(self):
         self.slug = slugify(self.title)
-        super().save(*args, **kwargs)
-        
-    def get_absolute_url(self) -> str:
-        return reverse(
-            "article_detail",
-            kwargs={
-                "article_id": self.id,
-                "slug": self.slug,
-            }
-        )
-        
-    def as_markdown(self) -> str:
-        return markdown.markdown(self.content, safe_mode="escape", extensions=["extra"])
+
+    def as_markdown(self):
+        return markdown.markdown(self.content, safe_mode='escape', extensions=['extra'])
+
+    def __str__(self):
+        return self.title
