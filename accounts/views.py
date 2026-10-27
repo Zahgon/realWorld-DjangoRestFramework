@@ -5,6 +5,8 @@ swallow-everything error behaviour of the implementation this was ported
 from.  Where the original silently returned an odd status (a 202 on login,
 a 200 carrying an error envelope on the profile list) the oddity is kept.
 """
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -78,7 +80,6 @@ def account_login(
 
 
 def _now():
-    from datetime import datetime, timezone
     return datetime.now(timezone.utc)
 
 

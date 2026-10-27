@@ -52,6 +52,27 @@ def _tags_for(session, names):
     return tags
 
 
+def _write_article(request, body, session, article):
+    """Copy a wrapped article payload onto `article` and reset its tag set.
+
+    Creating and updating differ only in whether the row already exists, so the
+    payload handling, the missing-`tagList` rejection and the slug recompute
+    live here. The caller owns the session, the status code and, on update, the
+    ownership check.
+    """
+    payload = parse_body(request, body)["article"]
+    serializer = ArticleSerializer(**payload)
+    tags = serializer.tagList
+    if tags is None:
+        raise KeyError("tags")
+    article.title = serializer.title
+    article.summary = serializer.description
+    article.content = serializer.body
+    article.save()
+    article.tags.clear()
+    article.tags.extend(_tags_for(session, tags))
+
+
 @router.get("/articles")
 def article_list(
     request: Request,
@@ -70,19 +91,8 @@ def article_create(
     user=Depends(current_user),
 ):
     try:
-        payload = parse_body(request, body)["article"]
-        serializer = ArticleSerializer(**payload)
-        tags = serializer.tagList
-        if tags is None:
-            raise KeyError("tags")
-        article = Article(
-            author=user,
-            title=serializer.title,
-            summary=serializer.description,
-            content=serializer.body,
-        )
-        article.save()
-        article.tags.extend(_tags_for(session, tags))
+        article = Article(author=user)
+        _write_article(request, body, session, article)
         session.add(article)
         session.commit()
         session.refresh(article)
@@ -142,17 +152,7 @@ def article_update(
         article = _get_article(session, slug)
         if article.author_id != user.id:
             return api_response(UNAUTHORIZED_ACTION, status_code=401)
-        payload = parse_body(request, body)["article"]
-        serializer = ArticleSerializer(**payload)
-        tags = serializer.tagList
-        if tags is None:
-            raise KeyError("tags")
-        article.title = serializer.title
-        article.summary = serializer.description
-        article.content = serializer.body
-        article.save()
-        article.tags.clear()
-        article.tags.extend(_tags_for(session, tags))
+        _write_article(request, body, session, article)
         session.commit()
         session.refresh(article)
         return api_response({"article": article_data(article, user)})

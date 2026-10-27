@@ -34,14 +34,20 @@ class Command:
 
         session = SessionLocal()
         try:
-            if session.scalars(select(User).where(User.name == name)).first():
-                print("User already exists")
+            if email and name and password:
+                if not session.scalars(select(User).where(User.email == email)).first() \
+                        and not session.scalars(select(User).where(User.name == name)).first():
+                    UserManager(session).create_user(
+                        email=email, password=password, name=name
+                    )
+                    session.commit()
+                    print("Admin user created successfully.")
+                    return 0
+                else:
+                    print("Admin user already exists.")
+                    return 1
+            else:
+                print("Please provide --email, --name, and --password arguments.")
                 return 1
-            UserManager(session).create_user(
-                email=email, password=password, name=name
-            )
-            session.commit()
-            print("User created successfully")
-            return 0
         finally:
             session.close()

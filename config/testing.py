@@ -12,9 +12,13 @@ the same trick the original test runner played.  That is why every test module
 imports this one first.
 """
 
+import json
 import os
 import unittest
 from urllib.parse import urlsplit
+
+import psycopg2
+from fastapi.testclient import TestClient
 
 SOURCE_DATABASE = os.environ.get('POSTGRES_DB', 'postgres')
 # The suffix is not decoration.  The conventional name for a throwaway database
@@ -31,8 +35,6 @@ from config import settings  # noqa: E402  (must follow the override above)
 
 def _create_test_database():
     """Create the throwaway database, dropping any leftover from a crash."""
-    import psycopg2
-
     options = settings.DATABASES['default']
     connection = psycopg2.connect(
         dbname=SOURCE_DATABASE,
@@ -103,8 +105,6 @@ class APIClient:
     """In-process client with the credential memory the original one had."""
 
     def __init__(self):
-        from fastapi.testclient import TestClient
-
         self._client = TestClient(app, base_url='http://testserver', raise_server_exceptions=False)
         self._headers = {}
 
@@ -122,8 +122,6 @@ class APIClient:
         if data is not None:
             if format == 'json':
                 sent['Content-Type'] = 'application/json'
-                import json
-
                 body = json.dumps(data).encode()
             else:
                 body = data

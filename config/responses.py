@@ -19,12 +19,11 @@ appended, by the middleware in :mod:`config.main`.
 """
 
 import json
-import re
 from contextvars import ContextVar
 
 from starlette.responses import Response
 
-#: Set per request, before routing, from :data:`ROUTE_ALLOW`.
+#: Set per request by :mod:`config.main` from the route it matched.
 current_allow = ContextVar('current_allow', default=None)
 
 SECURITY_TRAILER = [
@@ -33,35 +32,7 @@ SECURITY_TRAILER = [
     (b'Cross-Origin-Opener-Policy', b'same-origin'),
 ]
 
-#: Which verbs each endpoint advertises.  Longest-lived first: ``feed`` has to
-#: be tried before the slug pattern that would otherwise swallow it.
-ROUTE_ALLOW = [
-    (re.compile(r'^/api/?$'), 'GET, HEAD, OPTIONS'),
-    (re.compile(r'^/api/\.[a-z0-9]+/?$'), 'GET, HEAD, OPTIONS'),
-    (re.compile(r'^/api/users$'), 'OPTIONS, POST'),
-    (re.compile(r'^/api/users/login$'), 'OPTIONS, POST'),
-    (re.compile(r'^/api/user$'), 'GET, PUT, HEAD, OPTIONS'),
-    (re.compile(r'^/api/profiles(\.[a-z0-9]+/?)?$'), 'GET, POST'),
-    (re.compile(r'^/api/profiles/[^/.]+/follow(\.[a-z0-9]+/?)?$'), 'POST, DELETE'),
-    (re.compile(r'^/api/profiles/[^/.]+(\.[a-z0-9]+/?)?$'), 'GET, DELETE'),
-    (re.compile(r'^/api/articles(\.[a-z0-9]+/?)?$'), 'GET, POST'),
-    (re.compile(r'^/api/articles/feed(\.[a-z0-9]+/?)?$'), 'GET'),
-    (re.compile(r'^/api/articles/[^/.]+/favorite(\.[a-z0-9]+/?)?$'), 'POST, DELETE'),
-    (re.compile(r'^/api/articles/[^/]+/comments$'), 'GET, POST, HEAD, OPTIONS'),
-    (re.compile(r'^/api/articles/[^/]+/comments/[0-9]+$'), 'DELETE, OPTIONS'),
-    (re.compile(r'^/api/tags(\.[a-z0-9]+/?)?$'), 'GET'),
-    (re.compile(r'^/api/articles/[^/.]+(\.[a-z0-9]+/?)?$'), 'GET, PUT, DELETE'),
-    (re.compile(r'^/swagger/$'), 'GET, HEAD, OPTIONS'),
-]
-
 _UNSET = object()
-
-
-def allow_for(path):
-    for pattern, allow in ROUTE_ALLOW:
-        if pattern.match(path):
-            return allow
-    return None
 
 
 def render(payload):

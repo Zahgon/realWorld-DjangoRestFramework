@@ -1,7 +1,7 @@
 from config.testing import APITestCase, AccessToken, create_user, reverse, session
 from config import status
 
-# from accounts.models import User
+from accounts.models import UserManager
 
 
 class AccountRegistrationTestCase(APITestCase):
@@ -181,8 +181,6 @@ class AccountSurfaceTestCase(APITestCase):
         self.assertFalse(self.user.check_password('surface-password'))
 
     def test_create_superuser(self):
-        from accounts.models import UserManager
-
         admin = UserManager(session).create_superuser(
             email='admin@example.com', username='admin', password='admin-password'
         )
@@ -192,8 +190,6 @@ class AccountSurfaceTestCase(APITestCase):
         self.assertTrue(admin.is_active)
 
     def test_create_superuser_requires_staff(self):
-        from accounts.models import UserManager
-
         with self.assertRaises(ValueError):
             UserManager(session).create_superuser(
                 email='nope@example.com',

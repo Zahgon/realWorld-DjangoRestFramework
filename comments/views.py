@@ -79,9 +79,9 @@ def comment_destroy(
     viewer=Depends(current_user_or_none),
 ):
     try:
-        article = _get_article(session, slug)
+        _get_article(session, slug)
         comment = session.scalars(
-            select(Comment).where(Comment.id == id, Comment.article_id == article.id)
+            select(Comment).where(Comment.id == id)
         ).one()
         session.delete(comment)
         session.commit()

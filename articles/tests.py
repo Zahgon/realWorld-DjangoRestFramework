@@ -1,6 +1,9 @@
 from config.testing import APITestCase, APIClient, AccessToken, create, create_user, session
 from config import status
-from articles.models import Article
+from fastapi.testclient import TestClient
+
+from articles.models import Article, Tag
+from config.main import app
 
 
 class ArticleViewSetTest(APITestCase):
@@ -165,8 +168,6 @@ class ArticleSurfaceTestCase(APITestCase):
         self.assertEqual(str(self.article), 'A tagged article')
 
     def test_tag_str(self):
-        from articles.models import Tag
-
         tag = session.query(Tag).filter(Tag.name == 'dragons').one()
         self.assertEqual(str(tag), 'dragons')
 
@@ -410,9 +411,5 @@ class ArticleSurfaceTestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_the_application_starts_up(self):
-        from fastapi.testclient import TestClient
-
-        from config.main import app
-
         with TestClient(app) as client:
             self.assertEqual(client.get('/api/tags').status_code, status.HTTP_200_OK)
