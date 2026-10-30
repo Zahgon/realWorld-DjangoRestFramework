@@ -163,6 +163,7 @@ class APITestCase(unittest.TestCase):
 
     def setUp(self):
         session.rollback()
+        session.expunge_all()
         tables = ', '.join('"%s"' % table.name for table in Base.metadata.sorted_tables)
         session.execute(text('TRUNCATE %s RESTART IDENTITY CASCADE' % tables))
         session.commit()
